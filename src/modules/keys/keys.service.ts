@@ -10,6 +10,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { GenerateKeyDto } from './dto/generate-key.dto';
 import {
   deriveUserKey,
+  decryptPrivateKey,
   encryptPrivateKey,
   fingerprintPublicKey,
 } from './helpers/key-crypto.helper';
@@ -38,7 +39,7 @@ export class KeysService {
       dto.algorithm,
     );
 
-    const masterSecret = this.config.get<string>('SIGNATURE_ENCRYPTION_SECRET');
+    const masterSecret = this.config.getOrThrow<string>('SIGNATURE_ENCRYPTION_SECRET');
     const derivedKey = deriveUserKey(masterSecret, userId);
     const privateKeyEncrypted = encryptPrivateKey(privateKeyPem, derivedKey);
     const fingerprint = fingerprintPublicKey(publicKeyPem);
@@ -119,7 +120,7 @@ export class KeysService {
       throw new NotFoundException('No active key pair found.');
     }
 
-    const masterSecret = this.config.get<string>('SIGNATURE_ENCRYPTION_SECRET');
+    const masterSecret = this.config.getOrThrow<string>('SIGNATURE_ENCRYPTION_SECRET');
     const derivedKey = deriveUserKey(masterSecret, userId);
 
     return decryptPrivateKey(keyPair.privateKeyEncrypted, derivedKey);
