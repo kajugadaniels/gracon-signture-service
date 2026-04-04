@@ -24,10 +24,15 @@ export class SigningService {
     // Must have an active, non-expired, non-revoked certificate
     const certificate = await this.getActiveCertificate(userId);
 
-    // Fetch key pair for algorithm info
+    // Fetch key pair for algorithm info — decryptActivePrivateKey also throws
+    // if none exists, so reaching this point guarantees an active key pair
     const keyPair = await this.prisma.personalKeyPair.findFirst({
       where: { userId, isActive: true },
     });
+
+    if (!keyPair) {
+      throw new NotFoundException('No active key pair found.');
+    }
 
     // Decrypt private key — used only inside this scope
     let privateKeyPem: string | null =
@@ -78,6 +83,14 @@ export class SigningService {
 
     let result = false;
     let failReason: string | undefined;
+    let signer:
+      | {
+          subjectCN: string;
+          certificateId: string;
+          notBefore: Date;
+          notAfter: Date;
+        }
+      | undefined;
 
     if (!certificate) {
       result = false;
@@ -97,7 +110,17 @@ export class SigningService {
           sigBuffer,
         );
 
-        if (!result) failReason = 'Signature does not match document hash.';
+        if (result) {
+          // Certificate is non-null inside this else block — TypeScript knows this
+          signer = {
+            subjectCN: certificate.subjectCN,
+            certificateId: certificate.id,
+            notBefore: certificate.notBefore,
+            notAfter: certificate.notAfter,
+          };
+        } else {
+          failReason = 'Signature does not match document hash.';
+        }
       } catch {
         result = false;
         failReason = 'Signature verification failed — invalid format.';
@@ -117,16 +140,7 @@ export class SigningService {
 
     return {
       valid: result,
-      ...(result
-        ? {
-            signer: {
-              subjectCN: certificate.subjectCN,
-              certificateId: certificate.id,
-              notBefore: certificate.notBefore,
-              notAfter: certificate.notAfter,
-            },
-          }
-        : { reason: failReason }),
+      ...(result ? { signer } : { reason: failReason }),
     };
   }
 
