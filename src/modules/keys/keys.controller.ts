@@ -16,7 +16,7 @@ import { Throttle } from '@nestjs/throttler';
 import { KeysService } from './keys.service';
 import { GenerateKeyDto } from './dto/generate-key.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Keys')
 @ApiBearerAuth()

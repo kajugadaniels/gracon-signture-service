@@ -16,7 +16,7 @@ import { CertificatesService } from './certificates.service';
 import { IssueCertificateDto } from './dto/issue-certificate.dto';
 import { RevokeCertificateDto } from './dto/revoke-certificate.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Certificates')
 @ApiBearerAuth()

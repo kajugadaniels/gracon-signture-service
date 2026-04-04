@@ -8,7 +8,7 @@ import {
   HttpStatus,
   Req,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -22,7 +22,7 @@ import { SignDocumentDto } from './dto/sign-document.dto';
 import { VerifySignatureDto } from './dto/verify-signature.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Signing')
 @Controller('signature/signing')

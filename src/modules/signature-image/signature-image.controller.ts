@@ -18,7 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { SignatureImageService } from './signature-image.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Signature Image')
 @ApiBearerAuth()
