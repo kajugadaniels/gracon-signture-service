@@ -19,7 +19,7 @@ export class UserJwtStrategy extends PassportStrategy(Strategy, 'user-jwt') {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       // Shares JWT_SECRET with api/auth/ — validates tokens issued there
-      secretOrKey: config.get<string>('JWT_SECRET'),
+      secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
     });
   }
 
