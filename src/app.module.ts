@@ -5,6 +5,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { validateEnv } from './common/config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
       { name: 'strict', ttl: 600_000, limit: 10 },
     ]),
     PrismaModule,
+    AuthModule,
     // Feature modules added per step below
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
