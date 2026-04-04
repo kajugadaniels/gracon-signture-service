@@ -7,6 +7,10 @@ import { validateEnv } from './common/config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { SignatureImageModule } from './modules/signature-image/signature-image.module';
+import { S3Module } from './common/s3/s3.module';
+import { KeysModule } from './modules/keys/keys.module';
+import { CertificatesModule } from './modules/certificates/certificates.module';
+import { SigningModule } from './modules/signing/signing.module';
 
 @Module({
   imports: [
@@ -20,8 +24,12 @@ import { SignatureImageModule } from './modules/signature-image/signature-image.
       { name: 'strict', ttl: 600_000, limit: 10 },
     ]),
     PrismaModule,
+    S3Module,
     AuthModule,
     SignatureImageModule,
+    KeysModule,
+    CertificatesModule,
+    SigningModule,
     // Feature modules added per step below
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
