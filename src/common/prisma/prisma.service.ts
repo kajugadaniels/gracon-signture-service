@@ -1,5 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { normalizeDatabaseUrl } from './database-url.util';
 
 @Injectable()
 export class PrismaService
@@ -7,9 +9,13 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   constructor() {
-    // PrismaClient v7+ requires an explicit options object in the constructor.
-    // datasourceUrl picks up DATABASE_URL from the environment automatically.
-    super({ datasourceUrl: process.env.DATABASE_URL });
+    // Prisma 7 requires a driver adapter — datasourceUrl in schema.prisma is no longer supported.
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+    const adapter = new PrismaPg({ connectionString: normalizeDatabaseUrl(connectionString) });
+    super({ adapter });
   }
 
   async onModuleInit() {
