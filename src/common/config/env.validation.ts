@@ -1,15 +1,41 @@
 import { plainToInstance } from 'class-transformer';
 import {
-  IsString, IsNotEmpty, IsNumber, IsIn,
-  Min, Max, MinLength, validateSync,
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsIn,
+  Min,
+  Max,
+  MinLength,
+  validateSync,
+  IsOptional,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+
+function parseNumberValue(
+  value: unknown,
+  fallback?: number,
+): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    return Number.parseInt(value, 10);
+  }
+
+  return Number.NaN;
+}
 
 class EnvironmentVariables {
   @IsIn(['development', 'production', 'test'])
   APP_ENV: string;
 
-  @Transform(({ value }) => parseInt(value, 10))
+  @Transform(({ value }) => parseNumberValue(value))
   @IsNumber()
   @Min(1024)
   @Max(65535)
@@ -28,9 +54,15 @@ class EnvironmentVariables {
 
   @IsString()
   @MinLength(32, {
+    message: 'ENCRYPTION_SECRET must be at least 32 chars and match api/auth/',
+  })
+  ENCRYPTION_SECRET: string;
+
+  @IsString()
+  @MinLength(32, {
     message:
       'SIGNATURE_ENCRYPTION_SECRET must be at least 32 chars. ' +
-      'Generate: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"',
+      "Generate: node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"",
   })
   SIGNATURE_ENCRYPTION_SECRET: string;
 
@@ -53,6 +85,20 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   FRONTEND_URL: string;
+
+  @IsString()
+  @IsNotEmpty()
+  FOREIGN_IDENTITY_SERVICE_URL: string;
+
+  @IsString()
+  @IsNotEmpty()
+  FOREIGN_IDENTITY_SERVICE_TOKEN: string;
+
+  @IsOptional()
+  @Transform(({ value }) => parseNumberValue(value, 300000))
+  @IsNumber()
+  @Min(1000)
+  FOREIGN_IDENTITY_CACHE_TTL_MS: number = 300000;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -66,7 +112,9 @@ export function validateEnv(config: Record<string, unknown>) {
     const messages = errors
       .map((e) => Object.values(e.constraints ?? {}).join(', '))
       .join('\n');
-    throw new Error(`[Signature Service] Environment validation failed:\n${messages}`);
+    throw new Error(
+      `[Signature Service] Environment validation failed:\n${messages}`,
+    );
   }
 
   return validated;
