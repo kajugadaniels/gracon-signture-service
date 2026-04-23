@@ -2,10 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  Logger,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
-import { Request } from 'express';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { KeysService } from '../keys/keys.service';
 import { SignDocumentDto } from './dto/sign-document.dto';
@@ -13,14 +11,12 @@ import { VerifySignatureDto } from './dto/verify-signature.dto';
 
 @Injectable()
 export class SigningService {
-  private readonly logger = new Logger(SigningService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly keys: KeysService,
   ) {}
 
-  async sign(userId: string, dto: SignDocumentDto, ipAddress?: string) {
+  async sign(userId: string, dto: SignDocumentDto) {
     // Must have an active, non-expired, non-revoked certificate
     const certificate = await this.getActiveCertificate(userId);
 
