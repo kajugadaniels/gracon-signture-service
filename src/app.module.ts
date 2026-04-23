@@ -11,6 +11,7 @@ import { S3Module } from './common/s3/s3.module';
 import { KeysModule } from './modules/keys/keys.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { SigningModule } from './modules/signing/signing.module';
+import { ForeignIdentityModule } from './modules/foreign-identity/foreign-identity.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SigningModule } from './modules/signing/signing.module';
     PrismaModule,
     S3Module,
     AuthModule,
+    ForeignIdentityModule,
     SignatureImageModule,
     KeysModule,
     CertificatesModule,
