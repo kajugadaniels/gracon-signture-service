@@ -21,24 +21,29 @@ export class ForeignIdentityClient {
   private readonly client: AxiosInstance;
   private readonly cache = new Map<string, CacheEntry>();
   private readonly ttlMs: number;
+  private readonly basicAuthHeader: string;
 
   constructor(private readonly config: ConfigService) {
-    const baseURL = this.config.getOrThrow<string>(
-      'FOREIGN_IDENTITY_SERVICE_URL',
+    const baseURL = this.config
+      .getOrThrow<string>('FOREIGN_IDENTITY_SERVICE_URL')
+      .replace(/\/+$/, '');
+    const username = this.config.getOrThrow<string>(
+      'FOREIGN_IDENTITY_SERVICE_USERNAME',
     );
-    const token = this.config.getOrThrow<string>(
-      'FOREIGN_IDENTITY_SERVICE_TOKEN',
+    const password = this.config.getOrThrow<string>(
+      'FOREIGN_IDENTITY_SERVICE_PASSWORD',
     );
 
     this.ttlMs =
       this.config.get<number>('FOREIGN_IDENTITY_CACHE_TTL_MS') ??
       DEFAULT_CACHE_TTL_MS;
+    this.basicAuthHeader = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 
     this.client = axios.create({
       baseURL,
       timeout: 5000,
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: this.basicAuthHeader,
         'Content-Type': 'application/json',
       },
     });
