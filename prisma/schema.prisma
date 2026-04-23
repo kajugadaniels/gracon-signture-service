@@ -55,20 +55,31 @@ model User {
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
 model CitizenIdentity {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  nidEncrypted   String
-  nidHash        String   @unique
+  id             String       @id @default(uuid())
+  userId         String       @unique
+  identityType   IdentityType @default(NID)
+  nidEncrypted   String?
+  nidHash        String?      @unique
+  finEncrypted   String?
+  finHash        String?      @unique
   surName        String
   postNames      String
   sex            String
   dateOfBirth    DateTime
   countryOfBirth String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([identityType, userId])
   @@map("citizen_identities")
+}
+
+enum IdentityType {
+  NID
+  FIN
+
+  @@map("IDENTITY_TYPE")
 }
 
 // ─── Platform IDs ─────────────────────────────────────────────────────────────
