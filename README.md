@@ -15,7 +15,7 @@ This service manages user key pairs, personal certificates, signature-image asse
 ## What This Service Owns
 
 - Personal key-pair generation
-- Certificate issuance and current-certificate lookup
+- Certificate issuance and current-certificate lookup for both Rwandan NID and foreign identity users
 - Signature-image upload/update
 - Signing operations and signing proof persistence
 
@@ -83,18 +83,25 @@ Key variables:
 APP_PORT=3002
 DATABASE_URL=
 JWT_SECRET=
+ENCRYPTION_SECRET=
 SIGNATURE_ENCRYPTION_SECRET=
+FOREIGN_IDENTITY_SERVICE_URL=http://localhost:3006/api/v1
+FOREIGN_IDENTITY_SERVICE_TOKEN=generated_service_account_token_here
+FOREIGN_IDENTITY_CACHE_TTL_MS=300000
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_S3_BUCKET_NAME=
 ```
 
+`ENCRYPTION_SECRET` must match `api/auth/` so this service can decrypt the stored NID or FIN before certificate issuance. `FOREIGN_IDENTITY_SERVICE_TOKEN` must be a valid admin JWT from `api/admin/` for a dedicated service account used to resolve FIN registry profiles during certificate issuance.
+
 ## Integration Boundaries
 
 - Trusts auth-issued user JWTs for identity
 - Serves certificate/key status to `app/app`
 - Receives signing requests for documents through server-side proxy routes in `app/documents`
+- Depends on `api/foreign-identity/` during FIN-based certificate issuance so the X.509 subject country stays aligned with the foreign identity registry
 
 ## Important Rules
 
@@ -107,4 +114,3 @@ AWS_S3_BUCKET_NAME=
 - Confirm whether a change affects current certificate assumptions
 - Keep signing APIs safe for proxied frontend usage
 - Validate any storage or encryption change against existing key material
-
