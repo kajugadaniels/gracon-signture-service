@@ -92,7 +92,11 @@ class EnvironmentVariables {
 
   @IsString()
   @IsNotEmpty()
-  FOREIGN_IDENTITY_SERVICE_TOKEN: string;
+  FOREIGN_IDENTITY_SERVICE_USERNAME: string;
+
+  @IsString()
+  @IsNotEmpty()
+  FOREIGN_IDENTITY_SERVICE_PASSWORD: string;
 
   @IsOptional()
   @Transform(({ value }) => parseNumberValue(value, 300000))
