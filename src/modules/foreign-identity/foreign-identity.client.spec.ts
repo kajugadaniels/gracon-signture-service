@@ -72,8 +72,12 @@ function createService(ttlMs = 300000) {
         return 'http://localhost:3006/api/v1';
       }
 
-      if (key === 'FOREIGN_IDENTITY_SERVICE_TOKEN') {
-        return 'service-token';
+      if (key === 'FOREIGN_IDENTITY_SERVICE_USERNAME') {
+        return 'service-user';
+      }
+
+      if (key === 'FOREIGN_IDENTITY_SERVICE_PASSWORD') {
+        return 'service-password';
       }
 
       throw new Error(`Unexpected config key: ${key}`);
@@ -106,6 +110,18 @@ describe('ForeignIdentityClient', () => {
     mockClient.get.mockResolvedValue({ data: PROFILE });
 
     await expect(service.getByFin(PROFILE.fin)).resolves.toEqual(PROFILE);
+    const createCall = mockedAxios.create.mock.calls[0];
+    const requestConfig = createCall?.[0] as {
+      baseURL: string;
+      headers: {
+        Authorization: string;
+      };
+    };
+
+    expect(requestConfig.baseURL).toBe('http://localhost:3006/api/v1');
+    expect(requestConfig.headers.Authorization).toBe(
+      `Basic ${Buffer.from('service-user:service-password').toString('base64')}`,
+    );
   });
 
   it('throws NotFoundException on 404', async () => {
