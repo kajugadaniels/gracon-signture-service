@@ -1,10 +1,11 @@
 import * as forge from 'node-forge';
-import { v4 as uuidv4 } from 'uuid';
+import * as crypto from 'crypto';
 
 export interface CertificateSubject {
   firstName: string;
   lastName: string;
   userId: string;
+  subjectInstId: string;
 }
 
 export interface BuildCertificateResult {
@@ -25,9 +26,12 @@ export function buildPersonalX509(
   subject: CertificateSubject,
   publicKeyPem: string,
   privateKeyPem: string,
+  subjectCountry: string,
   validityYears = 2,
 ): BuildCertificateResult {
-  const serialNumber = uuidv4().replace(/-/g, '').toUpperCase();
+  assertIsoAlpha2Country(subjectCountry);
+
+  const serialNumber = crypto.randomUUID().replace(/-/g, '').toUpperCase();
   const notBefore = new Date();
   const notAfter = new Date();
   notAfter.setFullYear(notAfter.getFullYear() + validityYears);
@@ -46,7 +50,8 @@ export function buildPersonalX509(
   const attrs = [
     { name: 'commonName', value: subjectCN },
     { name: 'organizationName', value: 'ID Verification Platform' },
-    { name: 'countryName', value: 'RW' },
+    { name: 'serialNumber', value: subject.subjectInstId },
+    { name: 'countryName', value: subjectCountry },
   ];
 
   cert.setSubject(attrs);
@@ -68,4 +73,12 @@ export function buildPersonalX509(
   const certificatePem = forge.pki.certificateToPem(cert);
 
   return { certificatePem, serialNumber, notBefore, notAfter, subjectCN };
+}
+
+function assertIsoAlpha2Country(subjectCountry: string): void {
+  if (!/^[A-Z]{2}$/.test(subjectCountry)) {
+    throw new Error(
+      `subjectCountry must be a valid ISO alpha-2 code. Received "${subjectCountry}".`,
+    );
+  }
 }
