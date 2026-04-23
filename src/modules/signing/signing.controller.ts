@@ -45,12 +45,8 @@ export class SigningController {
     status: 400,
     description: 'No active certificate or expired certificate',
   })
-  sign(
-    @CurrentUser() user: RequestUser,
-    @Body() dto: SignDocumentDto,
-    @Req() req: Request,
-  ) {
-    return this.service.sign(user.userId, dto, req.ip);
+  sign(@CurrentUser() user: RequestUser, @Body() dto: SignDocumentDto) {
+    return this.service.sign(user.userId, dto);
   }
 
   @Post('verify')
