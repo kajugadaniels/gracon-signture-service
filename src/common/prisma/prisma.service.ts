@@ -14,7 +14,9 @@ export class PrismaService
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not set');
     }
-    const adapter = new PrismaPg({ connectionString: normalizeDatabaseUrl(connectionString) });
+    const adapter = new PrismaPg({
+      connectionString: normalizeDatabaseUrl(connectionString),
+    });
     super({ adapter });
   }
 
