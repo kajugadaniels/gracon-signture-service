@@ -86,6 +86,12 @@ class EnvironmentVariables {
   @IsNotEmpty()
   FRONTEND_URL: string;
 
+  // Optional extra allowed origins for CORS, comma-separated.
+  // Used so multiple frontends (user, admin, documents) can call this API.
+  @IsOptional()
+  @IsString()
+  FRONTEND_URLS?: string;
+
   @IsString()
   @IsNotEmpty()
   FOREIGN_IDENTITY_SERVICE_URL: string;
