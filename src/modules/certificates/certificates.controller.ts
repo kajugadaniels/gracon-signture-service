@@ -25,22 +25,38 @@ export class CertificatesController {
   constructor(private readonly service: CertificatesService) {}
 
   @Post('issue')
-  @HttpCode(HttpStatus.CREATED)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary:
-      'Issue an X.509 personal certificate from verified identity + active key pair',
+      'Submit a certificate request for admin approval',
   })
-  @ApiResponse({ status: 201, description: 'Certificate issued and stored' })
+  @ApiResponse({
+    status: 202,
+    description: 'Certificate request recorded and left pending admin approval',
+  })
   @ApiResponse({
     status: 400,
     description: 'No active key pair or no verified identity',
   })
   @ApiResponse({
     status: 409,
-    description: 'Active certificate already exists',
+    description: 'Active certificate already exists or a request is already pending',
   })
   issue(@CurrentUser() user: RequestUser, @Body() dto: IssueCertificateDto) {
     return this.service.issue(user.userId, dto);
+  }
+
+  @Get('request/current')
+  @ApiOperation({
+    summary: 'Get the latest certificate request for the current user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Latest certificate request returned',
+  })
+  @ApiResponse({ status: 404, description: 'No certificate request found' })
+  getCurrentRequest(@CurrentUser() user: RequestUser) {
+    return this.service.getCurrentRequest(user.userId);
   }
 
   @Get('current')
