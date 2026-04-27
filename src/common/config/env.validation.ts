@@ -109,6 +109,14 @@ class EnvironmentVariables {
   @IsNumber()
   @Min(1000)
   FOREIGN_IDENTITY_CACHE_TTL_MS: number = 300000;
+
+  @IsString()
+  @IsNotEmpty()
+  SIGNATURE_SERVICE_USERNAME: string;
+
+  @IsString()
+  @IsNotEmpty()
+  SIGNATURE_SERVICE_PASSWORD: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
