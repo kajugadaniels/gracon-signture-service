@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
+import { CertificateRequestStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GenerateKeyDto } from './dto/generate-key.dto';
 import {
@@ -104,6 +105,19 @@ export class KeysService {
         isRevoked: true,
         revokedAt: new Date(),
         revokedReason: 'Key rotation',
+      },
+    });
+
+    await this.prisma.personalCertificateRequest.updateMany({
+      where: {
+        userId,
+        status: CertificateRequestStatus.PENDING,
+      },
+      data: {
+        status: CertificateRequestStatus.CANCELLED,
+        cancelledAt: new Date(),
+        cancellationReason:
+          'Certificate request cancelled automatically because the user rotated their key pair.',
       },
     });
 
