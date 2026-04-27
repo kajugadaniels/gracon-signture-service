@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';
 import { ConfigService } from '@nestjs/config';
-import { IdentityType } from '@prisma/client';
+import { CertificateRequestStatus, IdentityType } from '@prisma/client';
 import { CertificatesService } from './certificates.service';
 import { ForeignIdentityClient } from '../foreign-identity/foreign-identity.client';
 import { KeysService } from '../keys/keys.service';
@@ -67,7 +67,7 @@ function readSubjectIdentifier(
 }
 
 describe('CertificatesService integration', () => {
-  it('issues a FIN-backed certificate with C=KE and the FIN in the subject identifier', async () => {
+  it('approves a FIN-backed request with C=KE and the FIN in the subject identifier', async () => {
     const secret = 'shared-auth-encryption-secret';
     const fin = '2199180000001234';
     const { publicKeyPem, privateKeyPem } = generatePemKeyPair();
@@ -85,16 +85,23 @@ describe('CertificatesService integration', () => {
     );
 
     const prismaMock = {
-      personalKeyPair: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'key-1',
-          publicKey: publicKeyPem,
-          isActive: true,
-        }),
-      },
       personalCertificate: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: createCertificate,
+      },
+      personalCertificateRequest: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'request-1',
+          userId: 'user-1',
+          keyPairId: 'key-1',
+          status: CertificateRequestStatus.PENDING,
+          requestedValidityYears: 2,
+          keyPair: {
+            isActive: true,
+            publicKey: publicKeyPem,
+          },
+        }),
+        update: jest.fn(),
       },
       citizenIdentity: {
         findUnique: jest.fn().mockResolvedValue({
@@ -105,6 +112,9 @@ describe('CertificatesService integration', () => {
           postNames: 'Ishimwe',
         }),
       },
+      $transaction: jest.fn(async (callback: (tx: unknown) => unknown) => {
+        return callback(prismaMock);
+      }),
     };
 
     const keysMock = {
@@ -143,7 +153,7 @@ describe('CertificatesService integration', () => {
       foreignIdentityClientMock as unknown as ForeignIdentityClient,
     );
 
-    const result = await service.issue('user-1', { validityYears: 2 });
+    const result = await service.approveRequest('request-1', 'admin-1');
     const cert = forge.pki.certificateFromPem(result.certificatePem);
 
     expect(readSubjectField(cert, 'C')).toBe('KE');
