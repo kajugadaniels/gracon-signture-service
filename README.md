@@ -15,7 +15,7 @@ This service manages user key pairs, personal certificates, signature-image asse
 ## What This Service Owns
 
 - Personal key-pair generation
-- Certificate issuance and current-certificate lookup for both Rwandan NID and foreign identity users
+- Certificate request submission, admin-approved issuance, and current-certificate lookup for both Rwandan NID and foreign identity users
 - Signature-image upload/update
 - Signing operations and signing proof persistence
 
@@ -32,6 +32,7 @@ This service manages user key pairs, personal certificates, signature-image asse
 - Shared JWT validation from auth-issued tokens
 - Encrypted private-key storage derived from `SIGNATURE_ENCRYPTION_SECRET`
 - Single active certificate model per user
+- Pending certificate requests remain unusable until an admin approval turns them into a real certificate
 - Signature-image asset separation from key material
 - Signing endpoints designed for proxy-based frontend usage
 
