@@ -1,11 +1,17 @@
 import {
+  BadRequestException,
+  ConflictException,
   InternalServerErrorException,
   NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { IdentityType } from '@prisma/client';
+import {
+  CertificateRequestStatus,
+  IdentityType,
+  type PersonalCertificateRequest,
+} from '@prisma/client';
 import { CertificatesService } from './certificates.service';
 import { ForeignIdentityClient } from '../foreign-identity/foreign-identity.client';
 import { KeysService } from '../keys/keys.service';
@@ -21,37 +27,25 @@ jest.mock('./helpers/identity-crypto.helper', () => ({
   decryptIdentityValue: jest.fn(),
 }));
 
-interface CitizenIdentityRecord {
-  identityType: IdentityType;
-  nidEncrypted: string | null;
-  finEncrypted: string | null;
-  surName: string;
-  postNames: string;
-}
-
-interface KeyPairRecord {
-  id: string;
-  publicKey: string;
-  isActive: boolean;
-}
-
-interface ExistingCertificateRecord {
-  notAfter: Date;
-}
-
-interface CreatedCertificateRecord {
-  id: string;
-  serialNumber: string;
-  subjectCN: string;
-  notBefore: Date;
-  notAfter: Date;
-  certificatePem: string;
-  isRevoked: boolean;
-}
+type CertificateRequestRecord = Pick<
+  PersonalCertificateRequest,
+  | 'id'
+  | 'status'
+  | 'requestedValidityYears'
+  | 'reviewReason'
+  | 'cancellationReason'
+  | 'reviewedByAdminId'
+  | 'reviewedAt'
+  | 'cancelledAt'
+  | 'issuedCertificateId'
+  | 'createdAt'
+  | 'updatedAt'
+>;
 
 type FindFirstMock<T> = jest.Mock<Promise<T | null>, [unknown?]>;
 type FindUniqueMock<T> = jest.Mock<Promise<T | null>, [unknown?]>;
 type CreateMock<T> = jest.Mock<Promise<T>, [unknown]>;
+type UpdateMock<T> = jest.Mock<Promise<T>, [unknown]>;
 type DecryptMock = jest.Mock<Promise<string>, [string]>;
 type ConfigGetOrThrowMock = jest.Mock<string, [string]>;
 type ForeignLookupMock = jest.Mock<Promise<unknown>, [string]>;
@@ -73,22 +67,106 @@ const BUILD_RESULT = {
   subjectCN: 'Ishimwe Patrick',
 };
 
+const PENDING_REQUEST: CertificateRequestRecord = {
+  id: 'request-1',
+  status: CertificateRequestStatus.PENDING,
+  requestedValidityYears: 2,
+  reviewReason: null,
+  cancellationReason: null,
+  reviewedByAdminId: null,
+  reviewedAt: null,
+  cancelledAt: null,
+  issuedCertificateId: null,
+  createdAt: new Date('2026-04-27T08:00:00.000Z'),
+  updatedAt: new Date('2026-04-27T08:00:00.000Z'),
+};
+
 function createService() {
   const personalKeyPairFindFirst = jest.fn<
-    ReturnType<FindFirstMock<KeyPairRecord>>,
-    Parameters<FindFirstMock<KeyPairRecord>>
+    ReturnType<FindFirstMock<{ id: string; publicKey: string }>>,
+    Parameters<FindFirstMock<{ id: string; publicKey: string }>>
   >();
   const personalCertificateFindFirst = jest.fn<
-    ReturnType<FindFirstMock<ExistingCertificateRecord>>,
-    Parameters<FindFirstMock<ExistingCertificateRecord>>
+    ReturnType<FindFirstMock<{ notAfter: Date }>>,
+    Parameters<FindFirstMock<{ notAfter: Date }>>
   >();
   const personalCertificateCreate = jest.fn<
-    ReturnType<CreateMock<CreatedCertificateRecord>>,
-    Parameters<CreateMock<CreatedCertificateRecord>>
+    ReturnType<
+      CreateMock<{
+        id: string;
+        serialNumber: string;
+        subjectCN: string;
+        notBefore: Date;
+        notAfter: Date;
+        certificatePem: string;
+        isRevoked: boolean;
+      }>
+    >,
+    Parameters<
+      CreateMock<{
+        id: string;
+        serialNumber: string;
+        subjectCN: string;
+        notBefore: Date;
+        notAfter: Date;
+        certificatePem: string;
+        isRevoked: boolean;
+      }>
+    >
+  >();
+  const certificateRequestFindFirst = jest.fn<
+    ReturnType<FindFirstMock<{ id: string }>>,
+    Parameters<FindFirstMock<{ id: string }>>
+  >();
+  const certificateRequestCreate = jest.fn<
+    ReturnType<CreateMock<CertificateRequestRecord>>,
+    Parameters<CreateMock<CertificateRequestRecord>>
+  >();
+  const certificateRequestFindUnique = jest.fn<
+    ReturnType<
+      FindUniqueMock<{
+        id: string;
+        userId: string;
+        keyPairId: string;
+        status: CertificateRequestStatus;
+        requestedValidityYears: number;
+        keyPair: { isActive: boolean; publicKey: string };
+      }>
+    >,
+    Parameters<
+      FindUniqueMock<{
+        id: string;
+        userId: string;
+        keyPairId: string;
+        status: CertificateRequestStatus;
+        requestedValidityYears: number;
+        keyPair: { isActive: boolean; publicKey: string };
+      }>
+    >
+  >();
+  const certificateRequestUpdate = jest.fn<
+    ReturnType<UpdateMock<CertificateRequestRecord>>,
+    Parameters<UpdateMock<CertificateRequestRecord>>
   >();
   const citizenIdentityFindUnique = jest.fn<
-    ReturnType<FindUniqueMock<CitizenIdentityRecord>>,
-    Parameters<FindUniqueMock<CitizenIdentityRecord>>
+    ReturnType<
+      FindUniqueMock<{
+        identityType: IdentityType;
+        nidEncrypted: string | null;
+        finEncrypted: string | null;
+        surName: string;
+        postNames: string;
+      }>
+    >,
+    Parameters<
+      FindUniqueMock<{
+        identityType: IdentityType;
+        nidEncrypted: string | null;
+        finEncrypted: string | null;
+        surName: string;
+        postNames: string;
+      }>
+    >
   >();
   const decryptActivePrivateKey = jest.fn<
     ReturnType<DecryptMock>,
@@ -115,9 +193,19 @@ function createService() {
       create: personalCertificateCreate,
       update: jest.fn(),
     },
+    personalCertificateRequest: {
+      findFirst: certificateRequestFindFirst,
+      create: certificateRequestCreate,
+      findUnique: certificateRequestFindUnique,
+      update: certificateRequestUpdate,
+      updateMany: jest.fn(),
+    },
     citizenIdentity: {
       findUnique: citizenIdentityFindUnique,
     },
+    $transaction: jest.fn(async (callback: (tx: unknown) => unknown) => {
+      return callback(prismaMock);
+    }),
   };
 
   const keysMock = {
@@ -144,34 +232,14 @@ function createService() {
     personalKeyPairFindFirst,
     personalCertificateFindFirst,
     personalCertificateCreate,
+    certificateRequestFindFirst,
+    certificateRequestCreate,
+    certificateRequestFindUnique,
+    certificateRequestUpdate,
     citizenIdentityFindUnique,
     decryptActivePrivateKey,
     getByFin,
   };
-}
-
-function mockSuccessfulIssuanceState(
-  personalKeyPairFindFirst: FindFirstMock<KeyPairRecord>,
-  personalCertificateFindFirst: FindFirstMock<ExistingCertificateRecord>,
-  personalCertificateCreate: CreateMock<CreatedCertificateRecord>,
-  decryptActivePrivateKey: DecryptMock,
-): void {
-  personalKeyPairFindFirst.mockResolvedValue({
-    id: 'key-1',
-    publicKey: 'public-key',
-    isActive: true,
-  });
-  personalCertificateFindFirst.mockResolvedValue(null);
-  personalCertificateCreate.mockResolvedValue({
-    id: 'cert-1',
-    serialNumber: BUILD_RESULT.serialNumber,
-    subjectCN: BUILD_RESULT.subjectCN,
-    notBefore: BUILD_RESULT.notBefore,
-    notAfter: BUILD_RESULT.notAfter,
-    certificatePem: BUILD_RESULT.certificatePem,
-    isRevoked: false,
-  });
-  decryptActivePrivateKey.mockResolvedValue('private-key');
 }
 
 describe('CertificatesService', () => {
@@ -180,23 +248,22 @@ describe('CertificatesService', () => {
     mockBuildPersonalX509.mockReturnValue(BUILD_RESULT);
   });
 
-  it('uses RW and decrypted NID for NID users without calling foreign identity client', async () => {
+  it('creates a pending certificate request instead of issuing immediately', async () => {
     const {
       service,
       personalKeyPairFindFirst,
       personalCertificateFindFirst,
-      personalCertificateCreate,
+      certificateRequestFindFirst,
+      certificateRequestCreate,
       citizenIdentityFindUnique,
-      decryptActivePrivateKey,
-      getByFin,
     } = createService();
 
-    mockSuccessfulIssuanceState(
-      personalKeyPairFindFirst,
-      personalCertificateFindFirst,
-      personalCertificateCreate,
-      decryptActivePrivateKey,
-    );
+    personalKeyPairFindFirst.mockResolvedValue({
+      id: 'key-1',
+      publicKey: 'public-key',
+    });
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindFirst.mockResolvedValue(null);
     citizenIdentityFindUnique.mockResolvedValue({
       identityType: IdentityType.NID,
       nidEncrypted: 'nid-cipher',
@@ -204,11 +271,102 @@ describe('CertificatesService', () => {
       surName: 'Patrick',
       postNames: 'Ishimwe',
     });
+    certificateRequestCreate.mockResolvedValue(PENDING_REQUEST);
+
+    const result = await service.issue('user-1', { validityYears: 2 });
+
+    expect(certificateRequestCreate).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        keyPairId: 'key-1',
+        requestedValidityYears: 2,
+        status: CertificateRequestStatus.PENDING,
+      },
+      select: expect.any(Object),
+    });
+    expect(mockBuildPersonalX509).not.toHaveBeenCalled();
+    expect(result.status).toBe(CertificateRequestStatus.PENDING);
+  });
+
+  it('rejects duplicate pending requests', async () => {
+    const {
+      service,
+      personalKeyPairFindFirst,
+      personalCertificateFindFirst,
+      certificateRequestFindFirst,
+      citizenIdentityFindUnique,
+    } = createService();
+
+    personalKeyPairFindFirst.mockResolvedValue({
+      id: 'key-1',
+      publicKey: 'public-key',
+    });
+    personalCertificateFindFirst.mockResolvedValue(null);
+    citizenIdentityFindUnique.mockResolvedValue({
+      identityType: IdentityType.NID,
+      nidEncrypted: 'nid-cipher',
+      finEncrypted: null,
+      surName: 'Patrick',
+      postNames: 'Ishimwe',
+    });
+    certificateRequestFindFirst.mockResolvedValue({ id: 'request-1' });
+
+    await expect(service.issue('user-1', { validityYears: 2 })).rejects.toThrow(
+      new ConflictException(
+        'You already have a certificate request pending admin approval.',
+      ),
+    );
+  });
+
+  it('approves a NID-backed request and issues a real certificate', async () => {
+    const {
+      service,
+      personalCertificateFindFirst,
+      personalCertificateCreate,
+      certificateRequestFindUnique,
+      certificateRequestUpdate,
+      citizenIdentityFindUnique,
+      decryptActivePrivateKey,
+    } = createService();
+
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
+    citizenIdentityFindUnique.mockResolvedValue({
+      identityType: IdentityType.NID,
+      nidEncrypted: 'nid-cipher',
+      finEncrypted: null,
+      surName: 'Patrick',
+      postNames: 'Ishimwe',
+    });
+    decryptActivePrivateKey.mockResolvedValue('private-key');
     mockDecryptIdentityValue.mockReturnValue('1199912345678901');
+    personalCertificateCreate.mockResolvedValue({
+      id: 'cert-1',
+      serialNumber: BUILD_RESULT.serialNumber,
+      subjectCN: BUILD_RESULT.subjectCN,
+      notBefore: BUILD_RESULT.notBefore,
+      notAfter: BUILD_RESULT.notAfter,
+      certificatePem: BUILD_RESULT.certificatePem,
+      isRevoked: false,
+    });
+    certificateRequestUpdate.mockResolvedValue({
+      ...PENDING_REQUEST,
+      status: CertificateRequestStatus.APPROVED,
+      issuedCertificateId: 'cert-1',
+    });
 
-    await service.issue('user-1', { validityYears: 2 });
+    const result = await service.approveRequest('request-1', 'admin-1');
 
-    expect(getByFin).not.toHaveBeenCalled();
     expect(mockBuildPersonalX509).toHaveBeenCalledWith(
       {
         firstName: 'Ishimwe',
@@ -221,25 +379,41 @@ describe('CertificatesService', () => {
       'RW',
       2,
     );
+    expect(certificateRequestUpdate).toHaveBeenCalledWith({
+      where: { id: 'request-1' },
+      data: expect.objectContaining({
+        status: CertificateRequestStatus.APPROVED,
+        reviewedByAdminId: 'admin-1',
+        issuedCertificateId: 'cert-1',
+      }),
+    });
+    expect(result.id).toBe('cert-1');
   });
 
-  it('uses foreign identity country and decrypted FIN for FIN users', async () => {
+  it('approves a FIN-backed request with the foreign country and FIN subject identifier', async () => {
     const {
       service,
-      personalKeyPairFindFirst,
       personalCertificateFindFirst,
       personalCertificateCreate,
+      certificateRequestFindUnique,
+      certificateRequestUpdate,
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
     } = createService();
 
-    mockSuccessfulIssuanceState(
-      personalKeyPairFindFirst,
-      personalCertificateFindFirst,
-      personalCertificateCreate,
-      decryptActivePrivateKey,
-    );
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
     citizenIdentityFindUnique.mockResolvedValue({
       identityType: IdentityType.FIN,
       nidEncrypted: null,
@@ -247,6 +421,7 @@ describe('CertificatesService', () => {
       surName: 'Patrick',
       postNames: 'Ishimwe',
     });
+    decryptActivePrivateKey.mockResolvedValue('private-key');
     mockDecryptIdentityValue.mockReturnValue('2199180000001234');
     getByFin.mockResolvedValue({
       fin: '2199180000001234',
@@ -260,8 +435,22 @@ describe('CertificatesService', () => {
       issuanceVersion: 0,
       isActive: true,
     });
+    personalCertificateCreate.mockResolvedValue({
+      id: 'cert-1',
+      serialNumber: BUILD_RESULT.serialNumber,
+      subjectCN: BUILD_RESULT.subjectCN,
+      notBefore: BUILD_RESULT.notBefore,
+      notAfter: BUILD_RESULT.notAfter,
+      certificatePem: BUILD_RESULT.certificatePem,
+      isRevoked: false,
+    });
+    certificateRequestUpdate.mockResolvedValue({
+      ...PENDING_REQUEST,
+      status: CertificateRequestStatus.APPROVED,
+      issuedCertificateId: 'cert-1',
+    });
 
-    await service.issue('user-1', { validityYears: 2 });
+    await service.approveRequest('request-1', 'admin-1');
 
     expect(getByFin).toHaveBeenCalledWith('2199180000001234');
     expect(mockBuildPersonalX509).toHaveBeenCalledWith(
@@ -278,23 +467,28 @@ describe('CertificatesService', () => {
     );
   });
 
-  it('throws ServiceUnavailableException when the foreign identity service is unreachable', async () => {
+  it('maps foreign identity unavailability to ServiceUnavailableException during approval', async () => {
     const {
       service,
-      personalKeyPairFindFirst,
       personalCertificateFindFirst,
-      personalCertificateCreate,
+      certificateRequestFindUnique,
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
     } = createService();
 
-    mockSuccessfulIssuanceState(
-      personalKeyPairFindFirst,
-      personalCertificateFindFirst,
-      personalCertificateCreate,
-      decryptActivePrivateKey,
-    );
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
     citizenIdentityFindUnique.mockResolvedValue({
       identityType: IdentityType.FIN,
       nidEncrypted: null,
@@ -302,33 +496,41 @@ describe('CertificatesService', () => {
       surName: 'Patrick',
       postNames: 'Ishimwe',
     });
+    decryptActivePrivateKey.mockResolvedValue('private-key');
     mockDecryptIdentityValue.mockReturnValue('2199180000001234');
     getByFin.mockRejectedValue(new ServiceUnavailableException('down'));
 
-    await expect(service.issue('user-1', { validityYears: 2 })).rejects.toThrow(
+    await expect(
+      service.approveRequest('request-1', 'admin-1'),
+    ).rejects.toThrow(
       new ServiceUnavailableException(
         'Foreign identity service is currently unavailable. Please try again in a few minutes.',
       ),
     );
   });
 
-  it('throws InternalServerErrorException when the FIN is missing in the registry', async () => {
+  it('maps missing FIN registry entries to InternalServerErrorException during approval', async () => {
     const {
       service,
-      personalKeyPairFindFirst,
       personalCertificateFindFirst,
-      personalCertificateCreate,
+      certificateRequestFindUnique,
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
     } = createService();
 
-    mockSuccessfulIssuanceState(
-      personalKeyPairFindFirst,
-      personalCertificateFindFirst,
-      personalCertificateCreate,
-      decryptActivePrivateKey,
-    );
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
     citizenIdentityFindUnique.mockResolvedValue({
       identityType: IdentityType.FIN,
       nidEncrypted: null,
@@ -336,33 +538,99 @@ describe('CertificatesService', () => {
       surName: 'Patrick',
       postNames: 'Ishimwe',
     });
+    decryptActivePrivateKey.mockResolvedValue('private-key');
     mockDecryptIdentityValue.mockReturnValue('2199180000001234');
     getByFin.mockRejectedValue(new NotFoundException());
 
-    await expect(service.issue('user-1', { validityYears: 2 })).rejects.toThrow(
+    await expect(
+      service.approveRequest('request-1', 'admin-1'),
+    ).rejects.toThrow(
       new InternalServerErrorException(
         'Certificate issuance failed: associated foreign identity record not found. Contact platform administrators.',
       ),
     );
   });
 
-  it('maps foreign identity auth failures to ServiceUnavailableException', async () => {
+  it('rejects a pending request with an admin reason', async () => {
     const {
       service,
-      personalKeyPairFindFirst,
+      certificateRequestFindUnique,
+      certificateRequestUpdate,
+    } = createService();
+
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
+    certificateRequestUpdate.mockResolvedValue({
+      ...PENDING_REQUEST,
+      status: CertificateRequestStatus.REJECTED,
+      reviewReason: 'Identity review needs manual correction.',
+      reviewedByAdminId: 'admin-1',
+      reviewedAt: new Date('2026-04-27T09:00:00.000Z'),
+    });
+
+    const result = await service.rejectRequest(
+      'request-1',
+      'admin-1',
+      'Identity review needs manual correction.',
+    );
+
+    expect(result.status).toBe(CertificateRequestStatus.REJECTED);
+    expect(result.reviewReason).toBe(
+      'Identity review needs manual correction.',
+    );
+  });
+
+  it('requires a reason when rejecting a request', async () => {
+    const { service, certificateRequestFindUnique } = createService();
+
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
+
+    await expect(service.rejectRequest('request-1', 'admin-1', '   ')).rejects.toThrow(
+      new BadRequestException('A rejection reason is required.'),
+    );
+  });
+
+  it('maps foreign identity auth failures to ServiceUnavailableException during approval', async () => {
+    const {
+      service,
       personalCertificateFindFirst,
-      personalCertificateCreate,
+      certificateRequestFindUnique,
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
     } = createService();
 
-    mockSuccessfulIssuanceState(
-      personalKeyPairFindFirst,
-      personalCertificateFindFirst,
-      personalCertificateCreate,
-      decryptActivePrivateKey,
-    );
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
     citizenIdentityFindUnique.mockResolvedValue({
       identityType: IdentityType.FIN,
       nidEncrypted: null,
@@ -370,13 +638,14 @@ describe('CertificatesService', () => {
       surName: 'Patrick',
       postNames: 'Ishimwe',
     });
+    decryptActivePrivateKey.mockResolvedValue('private-key');
     mockDecryptIdentityValue.mockReturnValue('2199180000001234');
     getByFin.mockRejectedValue(
-      new UnauthorizedException('invalid service token'),
+      new UnauthorizedException('invalid service credentials'),
     );
 
     await expect(
-      service.issue('user-1', { validityYears: 2 }),
+      service.approveRequest('request-1', 'admin-1'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
