@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { CertificateRequestStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { KeysService } from '../keys/keys.service';
@@ -170,8 +171,22 @@ export class SigningService {
     });
 
     if (!cert) {
+      const pendingRequest = await this.prisma.personalCertificateRequest.findFirst({
+        where: {
+          userId,
+          status: CertificateRequestStatus.PENDING,
+        },
+        select: { id: true },
+      });
+
+      if (pendingRequest) {
+        throw new BadRequestException(
+          'Your certificate request is pending admin approval. You cannot sign documents until it is approved.',
+        );
+      }
+
       throw new BadRequestException(
-        'No active certificate. Issue one at POST /signature/certificates/issue.',
+        'No active certificate. Submit a certificate request at POST /signature/certificates/issue.',
       );
     }
 
