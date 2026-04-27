@@ -90,18 +90,21 @@ FOREIGN_IDENTITY_SERVICE_URL=http://localhost:3006/api/v1
 FOREIGN_IDENTITY_SERVICE_USERNAME=service.foreign-identity@yourplatform.com
 FOREIGN_IDENTITY_SERVICE_PASSWORD=your_foreign_identity_service_password
 FOREIGN_IDENTITY_CACHE_TTL_MS=300000
+SIGNATURE_SERVICE_USERNAME=service.signature-admin@yourplatform.com
+SIGNATURE_SERVICE_PASSWORD=your_signature_service_review_password
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_S3_BUCKET_NAME=
 ```
 
-`ENCRYPTION_SECRET` must match `api/auth/` so this service can decrypt the stored NID or FIN before certificate issuance. `FOREIGN_IDENTITY_SERVICE_USERNAME` and `FOREIGN_IDENTITY_SERVICE_PASSWORD` should match the dedicated service credentials used by `api/auth/` so both services authenticate to `api/foreign-identity/` consistently.
+`ENCRYPTION_SECRET` must match `api/auth/` so this service can decrypt the stored NID or FIN before certificate issuance. `FOREIGN_IDENTITY_SERVICE_USERNAME` and `FOREIGN_IDENTITY_SERVICE_PASSWORD` should match the dedicated service credentials used by `api/auth/` so both services authenticate to `api/foreign-identity/` consistently. `SIGNATURE_SERVICE_USERNAME` and `SIGNATURE_SERVICE_PASSWORD` are reserved for the internal approval bridge from `api/admin/` and should never be reused as end-user credentials.
 
 ## Integration Boundaries
 
 - Trusts auth-issued user JWTs for identity
 - Serves certificate/key status to `app/app`
+- Accepts internal Basic Auth review calls from `api/admin` to approve or reject pending certificate requests
 - Receives signing requests for documents through server-side proxy routes in `app/documents`
 - Depends on `api/foreign-identity/` during FIN-based certificate issuance so the X.509 subject country stays aligned with the foreign identity registry
 
