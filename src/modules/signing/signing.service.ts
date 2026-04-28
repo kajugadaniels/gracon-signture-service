@@ -2,8 +2,12 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
-import { CertificateRequestStatus } from '@prisma/client';
+import {
+  CertificateAccessPolicyStatus,
+  CertificateRequestStatus,
+} from '@prisma/client';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { KeysService } from '../keys/keys.service';
@@ -166,6 +170,24 @@ export class SigningService {
   // ─── Private ────────────────────────────────────────────────────────────────
 
   private async getActiveCertificate(userId: string) {
+    const accessPolicy =
+      await this.prisma.personalCertificateAccessPolicy.findUnique({
+        where: { userId },
+        select: {
+          status: true,
+          banReason: true,
+        },
+      });
+
+    if (accessPolicy?.status === CertificateAccessPolicyStatus.BANNED) {
+      const suffix = accessPolicy.banReason
+        ? ` Reason: ${accessPolicy.banReason}`
+        : '';
+      throw new ForbiddenException(
+        `Certificate access has been blocked by platform administrators. You cannot sign documents until this restriction is lifted.${suffix}`,
+      );
+    }
+
     const cert = await this.prisma.personalCertificate.findFirst({
       where: { userId, isRevoked: false },
     });
