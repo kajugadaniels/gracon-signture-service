@@ -70,6 +70,19 @@ export class CertificatesController {
     return this.service.getCurrent(user.userId);
   }
 
+  @Get('status')
+  @ApiOperation({
+    summary:
+      'Get certificate access status, latest request, and latest revocation context for the current user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Certificate status payload returned',
+  })
+  getCurrentStatus(@CurrentUser() user: RequestUser) {
+    return this.service.getCurrentStatus(user.userId);
+  }
+
   @Post('revoke')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
