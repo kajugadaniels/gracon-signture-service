@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -9,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CertificateAccessPolicyStatus,
   CertificateRequestStatus,
   IdentityType,
   type PersonalCertificateRequest,
@@ -45,6 +47,15 @@ type CertificateRequestRecord = Pick<
   | 'updatedAt'
 >;
 
+type CertificateAccessPolicyRecord = {
+  status: CertificateAccessPolicyStatus;
+  banReason: string | null;
+  bannedAt: Date | null;
+  unbanReason: string | null;
+  unbannedAt: Date | null;
+  updatedAt: Date;
+};
+
 @Injectable()
 export class CertificatesService {
   constructor(
@@ -55,6 +66,7 @@ export class CertificatesService {
   ) {}
 
   async issue(userId: string, dto: IssueCertificateDto) {
+    await this.ensureCertificateAccessAllowed(userId, 'request');
     const keyPair = await this.requireActiveKeyPair(userId);
     await this.ensureNoActiveCertificate(userId);
     await this.ensureVerifiedIdentity(userId);
@@ -105,6 +117,60 @@ export class CertificatesService {
         : Math.floor(
             (certificate.notAfter.getTime() - now.getTime()) / 86_400_000,
           ),
+    };
+  }
+
+  async getCurrentStatus(userId: string) {
+    const now = new Date();
+    const [certificate, latestRequest, policy, latestRevocation] =
+      await Promise.all([
+        this.prisma.personalCertificate.findFirst({
+          where: { userId, isRevoked: false },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            serialNumber: true,
+            subjectCN: true,
+            notBefore: true,
+            notAfter: true,
+          },
+        }),
+        this.prisma.personalCertificateRequest.findFirst({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          select: this.requestSelect(),
+        }),
+        this.findCertificateAccessPolicy(userId),
+        this.prisma.personalCertificate.findFirst({
+          where: {
+            userId,
+            isRevoked: true,
+            revokedAt: { not: null },
+          },
+          orderBy: { revokedAt: 'desc' },
+          select: {
+            id: true,
+            serialNumber: true,
+            revokedAt: true,
+            revokedReason: true,
+          },
+        }),
+      ]);
+
+    return {
+      accessPolicy: this.formatAccessPolicy(policy),
+      latestRequest: latestRequest ? this.formatRequest(latestRequest) : null,
+      currentCertificate: certificate
+        ? this.formatCertificateSummary(certificate, now)
+        : null,
+      latestRevocation: latestRevocation
+        ? {
+            certificateId: latestRevocation.id,
+            serialNumber: latestRevocation.serialNumber,
+            revokedAt: latestRevocation.revokedAt,
+            revokedReason: latestRevocation.revokedReason,
+          }
+        : null,
     };
   }
 
@@ -166,6 +232,7 @@ export class CertificatesService {
       );
     }
 
+    await this.ensureRequestApprovalAllowed(request.userId);
     await this.ensureNoActiveCertificate(request.userId);
     const citizenIdentity = await this.ensureVerifiedIdentity(request.userId);
     const subjectIdentity = await this.resolveSubjectIdentity(citizenIdentity);
@@ -351,6 +418,34 @@ export class CertificatesService {
     }
   }
 
+  private async ensureCertificateAccessAllowed(
+    userId: string,
+    action: 'request' | 'sign',
+  ) {
+    const policy = await this.findCertificateAccessPolicy(userId);
+
+    if (policy?.status !== CertificateAccessPolicyStatus.BANNED) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      this.buildCertificateAccessBlockedMessage(action, policy.banReason),
+    );
+  }
+
+  private async ensureRequestApprovalAllowed(userId: string) {
+    const policy = await this.findCertificateAccessPolicy(userId);
+
+    if (policy?.status !== CertificateAccessPolicyStatus.BANNED) {
+      return;
+    }
+
+    const suffix = policy.banReason ? ` Reason: ${policy.banReason}` : '';
+    throw new ConflictException(
+      `This certificate request cannot be approved because certificate access for this user is currently banned.${suffix}`,
+    );
+  }
+
   private async findPendingRequest(userId: string) {
     return this.prisma.personalCertificateRequest.findFirst({
       where: {
@@ -369,6 +464,20 @@ export class CertificatesService {
         status: true,
         reviewReason: true,
         cancellationReason: true,
+      },
+    });
+  }
+
+  private findCertificateAccessPolicy(userId: string) {
+    return this.prisma.personalCertificateAccessPolicy.findUnique({
+      where: { userId },
+      select: {
+        status: true,
+        banReason: true,
+        bannedAt: true,
+        unbanReason: true,
+        unbannedAt: true,
+        updatedAt: true,
       },
     });
   }
@@ -427,6 +536,55 @@ export class CertificatesService {
       issuedCertificateId: request.issuedCertificateId,
       requestedAt: request.createdAt,
       updatedAt: request.updatedAt,
+    };
+  }
+
+  private formatAccessPolicy(policy: CertificateAccessPolicyRecord | null) {
+    if (!policy) {
+      return {
+        status: CertificateAccessPolicyStatus.ALLOWED,
+        banReason: null,
+        bannedAt: null,
+        unbanReason: null,
+        unbannedAt: null,
+        updatedAt: null,
+        isBanned: false,
+      };
+    }
+
+    return {
+      status: policy.status,
+      banReason: policy.banReason,
+      bannedAt: policy.bannedAt,
+      unbanReason: policy.unbanReason,
+      unbannedAt: policy.unbannedAt,
+      updatedAt: policy.updatedAt,
+      isBanned: policy.status === CertificateAccessPolicyStatus.BANNED,
+    };
+  }
+
+  private formatCertificateSummary(
+    certificate: {
+      id: string;
+      serialNumber: string;
+      subjectCN: string;
+      notBefore: Date;
+      notAfter: Date;
+    },
+    now: Date,
+  ) {
+    const isExpired = certificate.notAfter < now;
+
+    return {
+      id: certificate.id,
+      serialNumber: certificate.serialNumber,
+      subjectCN: certificate.subjectCN,
+      notBefore: certificate.notBefore,
+      notAfter: certificate.notAfter,
+      isExpired,
+      daysRemaining: isExpired
+        ? 0
+        : Math.floor((certificate.notAfter.getTime() - now.getTime()) / 86_400_000),
     };
   }
 
@@ -506,6 +664,19 @@ export class CertificatesService {
 
     const normalizedReason = reason.trim();
     return normalizedReason || null;
+  }
+
+  private buildCertificateAccessBlockedMessage(
+    action: 'request' | 'sign',
+    banReason: string | null,
+  ) {
+    const actionText =
+      action === 'request'
+        ? 'submit a new certificate request'
+        : 'sign documents';
+    const suffix = banReason ? ` Reason: ${banReason}` : '';
+
+    return `Certificate access has been blocked by platform administrators. You cannot ${actionText} until this restriction is lifted.${suffix}`;
   }
 
   private handleForeignIdentityLookupError(error: unknown): never {
