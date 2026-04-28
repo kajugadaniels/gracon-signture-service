@@ -84,16 +84,8 @@ export class CertificatesService {
     });
 
     if (!certificate) {
-      const pendingRequest = await this.findPendingRequest(userId);
-      if (pendingRequest) {
-        throw new NotFoundException(
-          'No active certificate found. Your certificate request is pending admin approval.',
-        );
-      }
-
-      throw new NotFoundException(
-        'No active certificate found. Submit a certificate request at POST /signature/certificates/issue.',
-      );
+      const latestRequest = await this.findLatestRequest(userId);
+      this.throwForMissingCurrentCertificate(latestRequest);
     }
 
     const now = new Date();
@@ -369,6 +361,18 @@ export class CertificatesService {
     });
   }
 
+  private findLatestRequest(userId: string) {
+    return this.prisma.personalCertificateRequest.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        status: true,
+        reviewReason: true,
+        cancellationReason: true,
+      },
+    });
+  }
+
   private async findRequestOrThrow(requestId: string) {
     const request = await this.prisma.personalCertificateRequest.findUnique({
       where: { id: requestId },
@@ -522,6 +526,52 @@ export class CertificatesService {
 
     throw new InternalServerErrorException(
       'Certificate issuance failed due to an unexpected foreign identity lookup error.',
+    );
+  }
+
+  private throwForMissingCurrentCertificate(
+    latestRequest:
+      | {
+          status: CertificateRequestStatus;
+          reviewReason: string | null;
+          cancellationReason: string | null;
+        }
+      | null,
+  ): never {
+    if (!latestRequest) {
+      throw new NotFoundException(
+        'No active certificate found. Submit a certificate request at POST /signature/certificates/issue.',
+      );
+    }
+
+    if (latestRequest.status === CertificateRequestStatus.PENDING) {
+      throw new NotFoundException(
+        'No active certificate found. Your certificate request is pending admin approval.',
+      );
+    }
+
+    if (latestRequest.status === CertificateRequestStatus.REJECTED) {
+      const suffix = latestRequest.reviewReason
+        ? ` Admin note: ${latestRequest.reviewReason}`
+        : '';
+
+      throw new NotFoundException(
+        `No active certificate found. Your previous request was rejected and must be resubmitted.${suffix}`,
+      );
+    }
+
+    if (latestRequest.status === CertificateRequestStatus.CANCELLED) {
+      const suffix = latestRequest.cancellationReason
+        ? ` Reason: ${latestRequest.cancellationReason}`
+        : '';
+
+      throw new NotFoundException(
+        `No active certificate found. Your previous request is no longer active.${suffix}`,
+      );
+    }
+
+    throw new NotFoundException(
+      'No active certificate found. Your request was approved, but certificate activation has not completed yet. Refresh and try again shortly.',
     );
   }
 }
