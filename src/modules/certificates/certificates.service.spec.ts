@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
   ServiceUnavailableException,
@@ -8,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CertificateAccessPolicyStatus,
   CertificateRequestStatus,
   IdentityType,
   type PersonalCertificateRequest,
@@ -172,6 +174,7 @@ function createService() {
     ReturnType<DecryptMock>,
     Parameters<DecryptMock>
   >();
+  const certificateAccessPolicyFindUnique = jest.fn();
   const configGetOrThrow: ConfigGetOrThrowMock = jest.fn((key: string) => {
     if (key === 'ENCRYPTION_SECRET') {
       return 'shared-encryption-secret';
@@ -199,6 +202,9 @@ function createService() {
       findUnique: certificateRequestFindUnique,
       update: certificateRequestUpdate,
       updateMany: jest.fn(),
+    },
+    personalCertificateAccessPolicy: {
+      findUnique: certificateAccessPolicyFindUnique,
     },
     citizenIdentity: {
       findUnique: citizenIdentityFindUnique,
@@ -238,6 +244,7 @@ function createService() {
     certificateRequestUpdate,
     citizenIdentityFindUnique,
     decryptActivePrivateKey,
+    certificateAccessPolicyFindUnique,
     getByFin,
   };
 }
@@ -256,8 +263,10 @@ describe('CertificatesService', () => {
       certificateRequestFindFirst,
       certificateRequestCreate,
       citizenIdentityFindUnique,
+      certificateAccessPolicyFindUnique,
     } = createService();
 
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
     personalKeyPairFindFirst.mockResolvedValue({
       id: 'key-1',
       publicKey: 'public-key',
@@ -295,8 +304,10 @@ describe('CertificatesService', () => {
       personalCertificateFindFirst,
       certificateRequestFindFirst,
       citizenIdentityFindUnique,
+      certificateAccessPolicyFindUnique,
     } = createService();
 
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
     personalKeyPairFindFirst.mockResolvedValue({
       id: 'key-1',
       publicKey: 'public-key',
@@ -327,8 +338,10 @@ describe('CertificatesService', () => {
       certificateRequestUpdate,
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
+      certificateAccessPolicyFindUnique,
     } = createService();
 
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
     personalCertificateFindFirst.mockResolvedValue(null);
     certificateRequestFindUnique.mockResolvedValue({
       id: 'request-1',
@@ -400,8 +413,10 @@ describe('CertificatesService', () => {
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
+      certificateAccessPolicyFindUnique,
     } = createService();
 
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
     personalCertificateFindFirst.mockResolvedValue(null);
     certificateRequestFindUnique.mockResolvedValue({
       id: 'request-1',
@@ -475,8 +490,10 @@ describe('CertificatesService', () => {
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
+      certificateAccessPolicyFindUnique,
     } = createService();
 
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
     personalCertificateFindFirst.mockResolvedValue(null);
     certificateRequestFindUnique.mockResolvedValue({
       id: 'request-1',
@@ -517,8 +534,10 @@ describe('CertificatesService', () => {
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
+      certificateAccessPolicyFindUnique,
     } = createService();
 
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
     personalCertificateFindFirst.mockResolvedValue(null);
     certificateRequestFindUnique.mockResolvedValue({
       id: 'request-1',
@@ -617,8 +636,10 @@ describe('CertificatesService', () => {
       citizenIdentityFindUnique,
       decryptActivePrivateKey,
       getByFin,
+      certificateAccessPolicyFindUnique,
     } = createService();
 
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
     personalCertificateFindFirst.mockResolvedValue(null);
     certificateRequestFindUnique.mockResolvedValue({
       id: 'request-1',
@@ -689,5 +710,112 @@ describe('CertificatesService', () => {
         'No active certificate found. Your request was approved, but certificate activation has not completed yet. Refresh and try again shortly.',
       ),
     );
+  });
+
+  it('blocks certificate requests while certificate access is banned', async () => {
+    const {
+      service,
+      certificateAccessPolicyFindUnique,
+    } = createService();
+
+    certificateAccessPolicyFindUnique.mockResolvedValue({
+      status: CertificateAccessPolicyStatus.BANNED,
+      banReason: 'Repeated trust-chain violations require manual review.',
+      bannedAt: new Date('2026-04-28T09:30:00.000Z'),
+      unbanReason: null,
+      unbannedAt: null,
+      updatedAt: new Date('2026-04-28T09:30:00.000Z'),
+    });
+
+    await expect(service.issue('user-1', { validityYears: 2 })).rejects.toThrow(
+      new ForbiddenException(
+        'Certificate access has been blocked by platform administrators. You cannot submit a new certificate request until this restriction is lifted. Reason: Repeated trust-chain violations require manual review.',
+      ),
+    );
+  });
+
+  it('blocks approval when certificate access is currently banned', async () => {
+    const {
+      service,
+      certificateRequestFindUnique,
+      certificateAccessPolicyFindUnique,
+    } = createService();
+
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
+    certificateAccessPolicyFindUnique.mockResolvedValue({
+      status: CertificateAccessPolicyStatus.BANNED,
+      banReason: 'User is under permanent certificate restriction.',
+      bannedAt: new Date('2026-04-28T09:30:00.000Z'),
+      unbanReason: null,
+      unbannedAt: null,
+      updatedAt: new Date('2026-04-28T09:30:00.000Z'),
+    });
+
+    await expect(
+      service.approveRequest('request-1', 'admin-1'),
+    ).rejects.toThrow(
+      new ConflictException(
+        'This certificate request cannot be approved because certificate access for this user is currently banned. Reason: User is under permanent certificate restriction.',
+      ),
+    );
+  });
+
+  it('returns certificate status context with policy and latest revocation', async () => {
+    const {
+      service,
+      personalCertificateFindFirst,
+      certificateRequestFindFirst,
+      certificateAccessPolicyFindUnique,
+    } = createService();
+
+    personalCertificateFindFirst
+      .mockResolvedValueOnce({
+        id: 'cert-2',
+        serialNumber: 'SERIAL-2',
+        subjectCN: 'Ishimwe Patrick',
+        notBefore: new Date('2026-04-01T00:00:00.000Z'),
+        notAfter: new Date('2027-04-01T00:00:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        id: 'cert-1',
+        serialNumber: 'SERIAL-1',
+        revokedAt: new Date('2026-04-20T09:00:00.000Z'),
+        revokedReason: 'Certificate revoked by platform administrators.',
+      });
+    certificateRequestFindFirst.mockResolvedValue({
+      ...PENDING_REQUEST,
+      status: CertificateRequestStatus.REJECTED,
+      reviewReason: 'Resubmit after identity review.',
+    });
+    certificateAccessPolicyFindUnique.mockResolvedValue({
+      status: CertificateAccessPolicyStatus.BANNED,
+      banReason: 'Manual trust review in progress.',
+      bannedAt: new Date('2026-04-28T09:30:00.000Z'),
+      unbanReason: null,
+      unbannedAt: null,
+      updatedAt: new Date('2026-04-28T09:30:00.000Z'),
+    });
+
+    const result = await service.getCurrentStatus('user-1');
+
+    expect(result.accessPolicy.isBanned).toBe(true);
+    expect(result.accessPolicy.banReason).toBe(
+      'Manual trust review in progress.',
+    );
+    expect(result.latestRequest?.status).toBe(
+      CertificateRequestStatus.REJECTED,
+    );
+    expect(result.latestRevocation?.serialNumber).toBe('SERIAL-1');
+    expect(result.currentCertificate?.serialNumber).toBe('SERIAL-2');
   });
 });
