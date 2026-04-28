@@ -33,6 +33,7 @@ This service manages user key pairs, personal certificates, signature-image asse
 - Encrypted private-key storage derived from `SIGNATURE_ENCRYPTION_SECRET`
 - Single active certificate model per user
 - Pending certificate requests remain unusable until an admin approval turns them into a real certificate
+- Signing and certificate lookup now return lifecycle-specific feedback for pending, rejected, cancelled, and approved-but-not-yet-active request states
 - Signature-image asset separation from key material
 - Signing endpoints designed for proxy-based frontend usage
 
