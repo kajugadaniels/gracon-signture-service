@@ -103,6 +103,9 @@ describe('CertificatesService integration', () => {
         }),
         update: jest.fn(),
       },
+      personalCertificateAccessPolicy: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
       citizenIdentity: {
         findUnique: jest.fn().mockResolvedValue({
           identityType: IdentityType.FIN,
