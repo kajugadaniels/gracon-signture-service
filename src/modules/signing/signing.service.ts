@@ -171,23 +171,19 @@ export class SigningService {
     });
 
     if (!cert) {
-      const pendingRequest = await this.prisma.personalCertificateRequest.findFirst({
+      const latestRequest = await this.prisma.personalCertificateRequest.findFirst({
         where: {
           userId,
-          status: CertificateRequestStatus.PENDING,
         },
-        select: { id: true },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          status: true,
+          reviewReason: true,
+          cancellationReason: true,
+        },
       });
 
-      if (pendingRequest) {
-        throw new BadRequestException(
-          'Your certificate request is pending admin approval. You cannot sign documents until it is approved.',
-        );
-      }
-
-      throw new BadRequestException(
-        'No active certificate. Submit a certificate request at POST /signature/certificates/issue.',
-      );
+      this.throwForMissingCertificate(latestRequest);
     }
 
     if (cert.notAfter < new Date()) {
@@ -197,5 +193,51 @@ export class SigningService {
     }
 
     return cert;
+  }
+
+  private throwForMissingCertificate(
+    latestRequest:
+      | {
+          status: CertificateRequestStatus;
+          reviewReason: string | null;
+          cancellationReason: string | null;
+        }
+      | null,
+  ): never {
+    if (!latestRequest) {
+      throw new BadRequestException(
+        'No active certificate. Submit a certificate request at POST /signature/certificates/issue.',
+      );
+    }
+
+    if (latestRequest.status === CertificateRequestStatus.PENDING) {
+      throw new BadRequestException(
+        'Your certificate request is pending admin approval. You cannot sign documents until it is approved.',
+      );
+    }
+
+    if (latestRequest.status === CertificateRequestStatus.REJECTED) {
+      const suffix = latestRequest.reviewReason
+        ? ` Admin note: ${latestRequest.reviewReason}`
+        : '';
+
+      throw new BadRequestException(
+        `Your certificate request was rejected. Review the feedback and submit a fresh request before signing.${suffix}`,
+      );
+    }
+
+    if (latestRequest.status === CertificateRequestStatus.CANCELLED) {
+      const suffix = latestRequest.cancellationReason
+        ? ` Reason: ${latestRequest.cancellationReason}`
+        : '';
+
+      throw new BadRequestException(
+        `Your previous certificate request is no longer active. Submit a fresh request with your current key pair before signing.${suffix}`,
+      );
+    }
+
+    throw new BadRequestException(
+      'Your certificate request was approved, but no active certificate is available yet. Refresh and try again shortly. If this persists, contact support.',
+    );
   }
 }
