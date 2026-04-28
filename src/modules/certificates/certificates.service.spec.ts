@@ -648,4 +648,46 @@ describe('CertificatesService', () => {
       service.approveRequest('request-1', 'admin-1'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
+
+  it('returns a rejected-state certificate lookup message when the latest request was rejected', async () => {
+    const {
+      service,
+      personalCertificateFindFirst,
+      certificateRequestFindFirst,
+    } = createService();
+
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindFirst.mockResolvedValue({
+      status: CertificateRequestStatus.REJECTED,
+      reviewReason: 'Photo identity evidence did not match the verified profile.',
+      cancellationReason: null,
+    });
+
+    await expect(service.getCurrent('user-1')).rejects.toThrow(
+      new NotFoundException(
+        'No active certificate found. Your previous request was rejected and must be resubmitted. Admin note: Photo identity evidence did not match the verified profile.',
+      ),
+    );
+  });
+
+  it('returns an approved-state certificate lookup message when issuance has not activated yet', async () => {
+    const {
+      service,
+      personalCertificateFindFirst,
+      certificateRequestFindFirst,
+    } = createService();
+
+    personalCertificateFindFirst.mockResolvedValue(null);
+    certificateRequestFindFirst.mockResolvedValue({
+      status: CertificateRequestStatus.APPROVED,
+      reviewReason: 'Approved.',
+      cancellationReason: null,
+    });
+
+    await expect(service.getCurrent('user-1')).rejects.toThrow(
+      new NotFoundException(
+        'No active certificate found. Your request was approved, but certificate activation has not completed yet. Refresh and try again shortly.',
+      ),
+    );
+  });
 });
