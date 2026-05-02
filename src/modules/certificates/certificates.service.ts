@@ -13,6 +13,7 @@ import {
   CertificateAccessPolicyStatus,
   CertificateRequestStatus,
   IdentityType,
+  PersonalKeyAlgorithm,
   type PersonalCertificateRequest,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -56,6 +57,12 @@ type CertificateAccessPolicyRecord = {
   updatedAt: Date;
 };
 
+type ActiveKeyPairForRequest = {
+  id: string;
+  publicKey: string;
+  algorithm: PersonalKeyAlgorithm;
+};
+
 @Injectable()
 export class CertificatesService {
   constructor(
@@ -67,11 +74,12 @@ export class CertificatesService {
 
   async issue(userId: string, dto: IssueCertificateDto) {
     await this.ensureCertificateAccessAllowed(userId, 'request');
-    const keyPair = await this.requireActiveKeyPair(userId);
+    const activeKeyPair = await this.requireActiveKeyPair(userId);
     await this.ensureNoActiveCertificate(userId);
-    await this.ensureKeyPairHasNoCertificate(keyPair.id);
     await this.ensureVerifiedIdentity(userId);
     await this.ensureNoPendingRequest(userId);
+    const { keyPair, keyPairRotated } =
+      await this.prepareKeyPairForCertificateRequest(userId, activeKeyPair);
 
     const request = await this.prisma.personalCertificateRequest.create({
       data: {
@@ -85,8 +93,8 @@ export class CertificatesService {
 
     return {
       ...this.formatRequest(request),
-      message:
-        'Certificate request submitted successfully. An administrator must approve it before you can sign documents.',
+      keyPairRotated,
+      message: this.buildCertificateRequestMessage(keyPairRotated),
     };
   }
 
@@ -362,6 +370,7 @@ export class CertificatesService {
       select: {
         id: true,
         publicKey: true,
+        algorithm: true,
       },
     });
 
@@ -389,18 +398,60 @@ export class CertificatesService {
     }
   }
 
-  private async ensureKeyPairHasNoCertificate(keyPairId: string) {
-    const existing = await this.prisma.personalCertificate.findFirst({
-      where: { keyPairId },
-      select: { id: true },
+  private async prepareKeyPairForCertificateRequest(
+    userId: string,
+    keyPair: ActiveKeyPairForRequest,
+  ) {
+    const existing = await this.findCertificateByKeyPair(keyPair.id);
+
+    if (!existing) {
+      return { keyPair, keyPairRotated: false };
+    }
+
+    const rotatedKeyPair = await this.keys.rotate(userId, {
+      algorithm: keyPair.algorithm,
     });
+
+    return {
+      keyPair: {
+        id: rotatedKeyPair.id,
+        publicKey: rotatedKeyPair.publicKey,
+        algorithm: rotatedKeyPair.algorithm,
+      },
+      keyPairRotated: true,
+    };
+  }
+
+  private async ensureKeyPairHasNoCertificate(keyPairId: string) {
+    const existing = await this.findCertificateByKeyPair(keyPairId);
 
     if (!existing) {
       return;
     }
 
     throw new ConflictException(
-      'This key pair has already been used for a certificate. Generate or rotate your key pair, then submit a new certificate request.',
+      'This certificate request uses an old key pair that already has a certificate. Ask the user to submit a new request so the platform can rotate their key pair automatically.',
+    );
+  }
+
+  private async findCertificateByKeyPair(keyPairId: string) {
+    const existing = await this.prisma.personalCertificate.findFirst({
+      where: { keyPairId },
+      select: { id: true },
+    });
+
+    return existing;
+  }
+
+  private buildCertificateRequestMessage(keyPairRotated: boolean) {
+    if (!keyPairRotated) {
+      return 'Certificate request submitted successfully. An administrator must approve it before you can sign documents.';
+    }
+
+    return (
+      'Certificate request submitted successfully. Because your previous ' +
+      'certificate was revoked, we automatically rotated your key pair before ' +
+      'sending this request for admin approval.'
     );
   }
 
