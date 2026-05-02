@@ -12,6 +12,7 @@ import {
   CertificateAccessPolicyStatus,
   CertificateRequestStatus,
   IdentityType,
+  PersonalKeyAlgorithm,
   type PersonalCertificateRequest,
 } from '@prisma/client';
 import { CertificatesService } from './certificates.service';
@@ -51,6 +52,16 @@ type UpdateMock<T> = jest.Mock<Promise<T>, [unknown]>;
 type DecryptMock = jest.Mock<Promise<string>, [string]>;
 type ConfigGetOrThrowMock = jest.Mock<string, [string]>;
 type ForeignLookupMock = jest.Mock<Promise<unknown>, [string]>;
+type RotateKeyPairMock = jest.Mock<
+  Promise<{
+    id: string;
+    algorithm: PersonalKeyAlgorithm;
+    publicKey: string;
+    fingerprint: string;
+    createdAt: Date;
+  }>,
+  [string, { algorithm: PersonalKeyAlgorithm }]
+>;
 
 type BuildPersonalX509Mock = jest.MockedFunction<typeof buildPersonalX509>;
 type DecryptIdentityValueMock = jest.MockedFunction<
@@ -85,8 +96,20 @@ const PENDING_REQUEST: CertificateRequestRecord = {
 
 function createService() {
   const personalKeyPairFindFirst = jest.fn<
-    ReturnType<FindFirstMock<{ id: string; publicKey: string }>>,
-    Parameters<FindFirstMock<{ id: string; publicKey: string }>>
+    ReturnType<
+      FindFirstMock<{
+        id: string;
+        publicKey: string;
+        algorithm?: PersonalKeyAlgorithm;
+      }>
+    >,
+    Parameters<
+      FindFirstMock<{
+        id: string;
+        publicKey: string;
+        algorithm?: PersonalKeyAlgorithm;
+      }>
+    >
   >();
   const personalCertificateFindFirst = jest.fn<
     ReturnType<FindFirstMock<{ id?: string; notAfter?: Date }>>,
@@ -174,6 +197,7 @@ function createService() {
     ReturnType<DecryptMock>,
     Parameters<DecryptMock>
   >();
+  const rotateKeyPair: RotateKeyPairMock = jest.fn();
   const certificateAccessPolicyFindUnique = jest.fn();
   const configGetOrThrow: ConfigGetOrThrowMock = jest.fn((key: string) => {
     if (key === 'ENCRYPTION_SECRET') {
@@ -216,6 +240,7 @@ function createService() {
 
   const keysMock = {
     decryptActivePrivateKey,
+    rotate: rotateKeyPair,
   };
 
   const configMock = {
@@ -244,6 +269,7 @@ function createService() {
     certificateRequestUpdate,
     citizenIdentityFindUnique,
     decryptActivePrivateKey,
+    rotateKeyPair,
     certificateAccessPolicyFindUnique,
     getByFin,
   };
@@ -329,11 +355,15 @@ describe('CertificatesService', () => {
     );
   });
 
-  it('rejects new certificate requests when the active key pair already has a certificate', async () => {
+  it('automatically rotates reused active key pairs before creating a new request', async () => {
     const {
       service,
       personalKeyPairFindFirst,
       personalCertificateFindFirst,
+      certificateRequestFindFirst,
+      certificateRequestCreate,
+      citizenIdentityFindUnique,
+      rotateKeyPair,
       certificateAccessPolicyFindUnique,
     } = createService();
 
@@ -341,16 +371,44 @@ describe('CertificatesService', () => {
     personalKeyPairFindFirst.mockResolvedValue({
       id: 'key-1',
       publicKey: 'public-key',
+      algorithm: PersonalKeyAlgorithm.RSA_2048,
     });
     personalCertificateFindFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: 'old-cert-1' });
+    citizenIdentityFindUnique.mockResolvedValue({
+      identityType: IdentityType.NID,
+      nidEncrypted: 'nid-cipher',
+      finEncrypted: null,
+      surName: 'Patrick',
+      postNames: 'Ishimwe',
+    });
+    certificateRequestFindFirst.mockResolvedValue(null);
+    rotateKeyPair.mockResolvedValue({
+      id: 'key-2',
+      publicKey: 'rotated-public-key',
+      algorithm: PersonalKeyAlgorithm.RSA_2048,
+      fingerprint: 'rotated-fingerprint',
+      createdAt: new Date('2026-04-28T08:00:00.000Z'),
+    });
+    certificateRequestCreate.mockResolvedValue(PENDING_REQUEST);
 
-    await expect(service.issue('user-1', { validityYears: 2 })).rejects.toThrow(
-      new ConflictException(
-        'This key pair has already been used for a certificate. Generate or rotate your key pair, then submit a new certificate request.',
-      ),
-    );
+    const result = await service.issue('user-1', { validityYears: 2 });
+
+    expect(rotateKeyPair).toHaveBeenCalledWith('user-1', {
+      algorithm: PersonalKeyAlgorithm.RSA_2048,
+    });
+    expect(certificateRequestCreate).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        keyPairId: 'key-2',
+        requestedValidityYears: 2,
+        status: CertificateRequestStatus.PENDING,
+      },
+      select: expect.any(Object),
+    });
+    expect(result.keyPairRotated).toBe(true);
+    expect(result.message).toContain('automatically rotated your key pair');
   });
 
   it('approves a NID-backed request and issues a real certificate', async () => {
@@ -456,7 +514,7 @@ describe('CertificatesService', () => {
       service.approveRequest('request-1', 'admin-1'),
     ).rejects.toThrow(
       new ConflictException(
-        'This key pair has already been used for a certificate. Generate or rotate your key pair, then submit a new certificate request.',
+        'This certificate request uses an old key pair that already has a certificate. Ask the user to submit a new request so the platform can rotate their key pair automatically.',
       ),
     );
     expect(personalCertificateCreate).not.toHaveBeenCalled();
