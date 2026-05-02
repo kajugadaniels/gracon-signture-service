@@ -69,6 +69,7 @@ export class CertificatesService {
     await this.ensureCertificateAccessAllowed(userId, 'request');
     const keyPair = await this.requireActiveKeyPair(userId);
     await this.ensureNoActiveCertificate(userId);
+    await this.ensureKeyPairHasNoCertificate(keyPair.id);
     await this.ensureVerifiedIdentity(userId);
     await this.ensureNoPendingRequest(userId);
 
@@ -234,6 +235,7 @@ export class CertificatesService {
 
     await this.ensureRequestApprovalAllowed(request.userId);
     await this.ensureNoActiveCertificate(request.userId);
+    await this.ensureKeyPairHasNoCertificate(request.keyPairId);
     const citizenIdentity = await this.ensureVerifiedIdentity(request.userId);
     const subjectIdentity = await this.resolveSubjectIdentity(citizenIdentity);
 
@@ -385,6 +387,21 @@ export class CertificatesService {
         'You already have an active certificate. Revoke it first or rotate your keys to replace it.',
       );
     }
+  }
+
+  private async ensureKeyPairHasNoCertificate(keyPairId: string) {
+    const existing = await this.prisma.personalCertificate.findFirst({
+      where: { keyPairId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return;
+    }
+
+    throw new ConflictException(
+      'This key pair has already been used for a certificate. Generate or rotate your key pair, then submit a new certificate request.',
+    );
   }
 
   private async ensureVerifiedIdentity(userId: string) {
