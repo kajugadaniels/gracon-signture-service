@@ -89,8 +89,8 @@ function createService() {
     Parameters<FindFirstMock<{ id: string; publicKey: string }>>
   >();
   const personalCertificateFindFirst = jest.fn<
-    ReturnType<FindFirstMock<{ notAfter: Date }>>,
-    Parameters<FindFirstMock<{ notAfter: Date }>>
+    ReturnType<FindFirstMock<{ id?: string; notAfter?: Date }>>,
+    Parameters<FindFirstMock<{ id?: string; notAfter?: Date }>>
   >();
   const personalCertificateCreate = jest.fn<
     ReturnType<
@@ -329,6 +329,30 @@ describe('CertificatesService', () => {
     );
   });
 
+  it('rejects new certificate requests when the active key pair already has a certificate', async () => {
+    const {
+      service,
+      personalKeyPairFindFirst,
+      personalCertificateFindFirst,
+      certificateAccessPolicyFindUnique,
+    } = createService();
+
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
+    personalKeyPairFindFirst.mockResolvedValue({
+      id: 'key-1',
+      publicKey: 'public-key',
+    });
+    personalCertificateFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'old-cert-1' });
+
+    await expect(service.issue('user-1', { validityYears: 2 })).rejects.toThrow(
+      new ConflictException(
+        'This key pair has already been used for a certificate. Generate or rotate your key pair, then submit a new certificate request.',
+      ),
+    );
+  });
+
   it('approves a NID-backed request and issues a real certificate', async () => {
     const {
       service,
@@ -401,6 +425,41 @@ describe('CertificatesService', () => {
       }),
     });
     expect(result.id).toBe('cert-1');
+  });
+
+  it('rejects approval when the request key pair already has a certificate', async () => {
+    const {
+      service,
+      personalCertificateFindFirst,
+      certificateRequestFindUnique,
+      personalCertificateCreate,
+      certificateAccessPolicyFindUnique,
+    } = createService();
+
+    certificateAccessPolicyFindUnique.mockResolvedValue(null);
+    personalCertificateFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'old-cert-1' });
+    certificateRequestFindUnique.mockResolvedValue({
+      id: 'request-1',
+      userId: 'user-1',
+      keyPairId: 'key-1',
+      status: CertificateRequestStatus.PENDING,
+      requestedValidityYears: 2,
+      keyPair: {
+        isActive: true,
+        publicKey: 'public-key',
+      },
+    });
+
+    await expect(
+      service.approveRequest('request-1', 'admin-1'),
+    ).rejects.toThrow(
+      new ConflictException(
+        'This key pair has already been used for a certificate. Generate or rotate your key pair, then submit a new certificate request.',
+      ),
+    );
+    expect(personalCertificateCreate).not.toHaveBeenCalled();
   });
 
   it('approves a FIN-backed request with the foreign country and FIN subject identifier', async () => {
