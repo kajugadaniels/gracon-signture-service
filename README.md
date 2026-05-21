@@ -58,6 +58,7 @@ src/
 
 ```text
 api/signature/
+  agents/
   prisma/
   src/
     common/
@@ -66,6 +67,15 @@ api/signature/
   package.json
   nest-cli.json
 ```
+
+## AI Agent Rules
+
+Project-specific AI execution rules live in [`agents/README.md`](./agents/README.md).
+Read that guide before changing personal key pairs, certificates, certificate
+requests, certificate sanctions, signature images, signing proof, Prisma read
+models, or admin review integration. These local rules supplement the monorepo
+root `AGENTS.md`; they do not override platform-wide security,
+service-boundary, or git-command rules.
 
 ## Local Commands
 
