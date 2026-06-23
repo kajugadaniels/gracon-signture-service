@@ -59,7 +59,6 @@ src/
 ```text
 api/signature/
   agents/
-  prisma/
   src/
     common/
     modules/
@@ -85,7 +84,6 @@ npm run start:dev
 npm run build
 npm run test
 npm run lint
-npx prisma generate
 ```
 
 ## Environment Notes
