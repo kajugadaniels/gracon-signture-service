@@ -12,6 +12,9 @@ This service manages user key pairs, personal certificates, signature-image asse
 - Storage: AWS S3 for signature-image assets
 - Primary consumers: `app/app`, proxied calls from `app/documents`
 
+First clone database setup:
+[docs/database-setup.md](./docs/database-setup.md)
+
 ## What This Service Owns
 
 - Personal key-pair generation
