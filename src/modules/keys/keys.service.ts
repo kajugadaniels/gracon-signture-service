@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
-import { CertificateRequestStatus } from '@prisma/client';
+import { CertificateRequestStatus } from '@gracon/database';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GenerateKeyDto } from './dto/generate-key.dto';
 import {
