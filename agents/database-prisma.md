@@ -6,7 +6,7 @@
 
 - Do not run migrations here.
 - Shared schema changes start in `api/database`.
-- Run Prisma generate here after schema mirror updates.
+- Regenerate the shared Prisma client in `api/database` after shared schema changes.
 - Use `select` for response queries.
 - Preserve one-active-certificate assumptions unless the full platform changes.
 - Keep certificate request statuses and access policy statuses aligned with `api/admin`.
