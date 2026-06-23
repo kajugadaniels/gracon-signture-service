@@ -21,3 +21,7 @@
 
 - Signing must require valid user identity, active certificate, and allowed certificate policy.
 - Signing proof must preserve verification evidence without exposing private material.
+
+## Environment Rules
+
+- Use only runtime `DATABASE_URL` credentials here; `DATABASE_MIGRATION_URL` belongs only in `api/database`.
