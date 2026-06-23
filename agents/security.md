@@ -5,6 +5,8 @@
 - Decrypted private keys never leave the server.
 - Never log private keys, encrypted key blobs, derivation secrets, or signing payload secrets.
 - `SIGNATURE_ENCRYPTION_SECRET` must remain server-only.
+- Do not add new consumers of `SIGNATURE_ENCRYPTION_SECRET`; services that need
+  signing proof should use an audited internal signing boundary instead.
 
 ## Certificate Rules
 
