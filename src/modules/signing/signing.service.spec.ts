@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   CertificateAccessPolicyStatus,
   CertificateRequestStatus,
-} from '@prisma/client';
+} from '@gracon/database';
 import { SigningService } from './signing.service';
 
 describe('SigningService', () => {
