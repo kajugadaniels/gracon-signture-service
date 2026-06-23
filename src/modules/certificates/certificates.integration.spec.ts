@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';
 import { ConfigService } from '@nestjs/config';
-import { CertificateRequestStatus, IdentityType } from '@prisma/client';
+import { CertificateRequestStatus, IdentityType } from '@gracon/database';
 import { CertificatesService } from './certificates.service';
 import { ForeignIdentityClient } from '../foreign-identity/foreign-identity.client';
 import { KeysService } from '../keys/keys.service';
