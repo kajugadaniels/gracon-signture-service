@@ -5,7 +5,7 @@
 ## Rules
 
 - Do not run migrations here.
-- Shared schema changes start in `api/auth`.
+- Shared schema changes start in `api/database`.
 - Run Prisma generate here after schema mirror updates.
 - Use `select` for response queries.
 - Preserve one-active-certificate assumptions unless the full platform changes.
